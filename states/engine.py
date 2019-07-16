@@ -67,7 +67,7 @@ class DiffBase(metaclass=DiffMount):
         description = ""
         for k, v in plan['add'].items():
             # { key: new_value }
-            description += colored("+", 'green') + "{} = {}".format(k, v) + '\n'
+            description += colored("+", 'green') + "{} = {}".format(k, repr(v)) + '\n'
 
         for k in plan['delete']:
             # { key: old_value }
@@ -75,7 +75,7 @@ class DiffBase(metaclass=DiffMount):
 
         for k, v in plan['change'].items():
             # { key: {'old': value, 'new': value} }
-            description += colored("~", 'yellow') + "{}:\n\t< {}\n\t> {}".format(k, v['old'], v['new']) + '\n'
+            description += colored("~", 'yellow') + "{}:\n\t< {}\n\t> {}".format(k, repr(v['old']), repr(v['new'])) + '\n'
 
         if description == "":
             description = "No Changes Detected"
