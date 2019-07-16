@@ -349,13 +349,20 @@ class ParameterStore(object):
     def reclassify_none_as_absent(self, plan):
         """Parameter store has no concept of "None" and does not accept empty strings so we must treat None as an
         absent key.  This method alters the plan accordingly."""
+        relocate = []
         for k, v in plan['add'].items():
             if v is None:
-                del plan['add'][k]
+                relocate.append(k)
+        for k in relocate:
+            del plan['add'][k]
+        relocate = []
         for k, v in plan['change'].items():
             if v['new'] is None:
-                plan['delete'][k] = v['old']
-                del plan['change'][k]
+                relocate.append(k)
+        for k in relocate:
+            plan['delete'][k] = plan['change'][k]['old']
+            del plan['change'][k]
+
         return plan
 
     def prepare_param(self, name, value):
