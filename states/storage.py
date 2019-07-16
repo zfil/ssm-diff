@@ -329,8 +329,10 @@ class ParameterStore(object):
                 continue
             elif isinstance(v, JSONBranch):
                 continue
-            elif isinstance(v, (int, float, type(None))):
+            elif isinstance(v, (int, float)):
                 state[k] = str(v)
+            elif isinstance(v, type(None)):
+                state[k] = None
             else:
                 errors[path+sep+k] = 'Cannot coerce type {}'.format(type(v))
         return errors
