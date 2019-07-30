@@ -1,3 +1,4 @@
+
 from __future__ import print_function
 
 import json
@@ -245,6 +246,7 @@ class ParameterStore(object):
     """Encodes/decodes a dict to/from the SSM Parameter Store"""
     invalid_characters = r'[^a-zA-Z0-9\-_\./]'
     KMS_KEY = 'aws:kms:alias'
+    secure_string_description_cache = {}
 
     def __init__(self, profile, diff_class, paths=('/',), no_secure=False, no_decrypt=False):
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -287,15 +289,19 @@ class ParameterStore(object):
     # noinspection PyMethodMayBeStatic
     def _read_param(self, value, ssm_type='String', name=None):
         if ssm_type == 'SecureString':
-            description = self.ssm.describe_parameters(
-                Filters=[{
-                    'Key': 'Name',
-                    'Values': [name]
-                }]
-            )
-            value = Secret(value, {
-                self.KMS_KEY: description['Parameters'][0]['KeyId'],
-            }, encrypted=self.no_decrypt)
+            if not name in self.secure_string_description_cache:
+                args = { 'ParameterFilters' : [ { 'Key': 'Type', 'Values': ['SecureString']} ] }
+                while True:
+                    resp = self.ssm.describe_parameters(**args)
+                    for param in resp['Parameters']:
+                        self.secure_string_description_cache[param['Name']] = Secret(value, {
+                            self.KMS_KEY: param['KeyId'],
+                        }, encrypted=self.no_decrypt)
+                    if 'NextToken' in resp:
+                        args['NextToken'] = resp['NextToken']
+                    else:
+                        break
+            value = self.secure_string_description_cache[name]
         elif ssm_type == 'StringList':
             value = value.split(',')
         return value
