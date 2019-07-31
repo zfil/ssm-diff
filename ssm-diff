@@ -28,7 +28,7 @@ def configure_endpoints(args):
                             no_decrypt=args.no_decrypt)
 
 
-def init(args):
+def clone(args):
     """Create a local YAML file from the SSM Parameter Store (per configs in args)"""
     remote, local = configure_endpoints(args)
     if local.exists():
@@ -40,7 +40,7 @@ def pull(args):
     """Update local YAML file with changes in the SSM Parameter Store (per configs in args)"""
     remote, local = configure_endpoints(args)
     if not local.exists():
-        raise ValueError('File does not exist, use `init` instead')
+        raise ValueError('File does not exist, use `clone` instead')
     local.save(remote.pull(local.get()))
 
 
@@ -48,12 +48,12 @@ def push(args):
     """Apply local changes to the SSM Parameter Store"""
     remote, local = configure_endpoints(args)
     if not local.exists():
-        raise ValueError('File does not exist.  Adjust the target file using `-f` or get started using `init`.')
-    print("\nApplying changes...")
+        raise ValueError('File does not exist.  Adjust the target file using `-f` or get started using `clone`.')
+    print("\nPushing changes...")
     try:
         remote.push(local.get())
     except Exception as e:
-        print("Failed to apply changes to remote:", e)
+        print("Failed to push changes to remote:", e)
         traceback.print_exc(10)
     print("Done.")
 
@@ -62,7 +62,7 @@ def plan(args):
     """Print a representation of the changes that would be applied to SSM Parameter Store if applied (per config in args)"""
     remote, local = configure_endpoints(args)
     if not local.exists():
-        raise ValueError('File does not exist.  Adjust the target file using `-f` or get started using `init`.')
+        raise ValueError('File does not exist.  Adjust the target file using `-f` or get started using `clone`.')
     print(DiffBase.describe_diff(remote.dry_run(local.get())))
 
 
@@ -74,8 +74,8 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers(dest='func', help='commands')
     subparsers.required = True
 
-    parser_init= subparsers.add_parser('clone', help='create a local copy of the remote storage')
-    parser_init.set_defaults(func=init)
+    parser_clone= subparsers.add_parser('clone', help='create a local copy of the remote storage')
+    parser_clone.set_defaults(func=clone)
 
     parser_pull = subparsers.add_parser('pull', help='pull changes from remote state')
     parser_pull.set_defaults(func=pull)
@@ -84,8 +84,8 @@ if __name__ == "__main__":
     parser_plan = subparsers.add_parser('plan', help='display changes between local and remote states')
     parser_plan.set_defaults(func=plan)
 
-    parser_apply = subparsers.add_parser('push', help='push changes to the remote storage')
-    parser_apply.set_defaults(func=push)
+    parser_push = subparsers.add_parser('push', help='push changes to the remote storage')
+    parser_push.set_defaults(func=push)
 
     args = parser.parse_args()
 
