@@ -138,7 +138,7 @@ Let's assume we have the following parameters set in SSM Parameter Store:
 /qa/uat/api/db_password = baz_uat (SecureString)
 ```
 
-`init` will create a `parameters.yml` file with the following contents:
+`clone` will create a `parameters.yml` file with the following contents:
 ```
 ssm-diff:config:
   ssm-diff:root: /
@@ -169,7 +169,7 @@ qa:
 
 As you can see in this file:
 
-- The environment settings during `init` are stored in the `ssm-diff:config` metadata section.  While
+- The environment settings during `clone` are stored in the `ssm-diff:config` metadata section.  While
 these are the default values, we strongly recommend that you do not edit (or remove0 this section. 
 - KMS-encrypted (SecureString) are decrypted and identified by the `!Secret` YAML tag.  The `!Secret` tag supports
 custom MKS aliases using the `aws:kms:alias` metadata key.  When adding secrets that use the default KMS key, you may 
