@@ -1,3 +1,4 @@
+
 from __future__ import print_function
 
 import json
@@ -264,37 +265,48 @@ class ParameterStore(object):
             })
         self.no_decrypt = no_decrypt
 
+    def _enrich_metadata(self, params):
+        ss_params = [ k for k, v in params.items() if v["Type"] == "SecureString" ]
+        p = self.ssm.get_paginator('describe_parameters')
+        chunk_size = 50
+        for i in range(0, len(ss_params), chunk_size):
+            for page in p.paginate(ParameterFilters=[ { 'Key': 'Name', 'Values': ss_params[i:i+chunk_size] } ]):
+                for param in page['Parameters']:
+                    params[param['Name']]['KeyId'] = param['KeyId']
+        return params
+
     def clone(self):
         p = self.ssm.get_paginator('get_parameters_by_path')
         output = {}
-        for path in self.paths:
-            try:
+        params = {}
+        try:
+            for path in self.paths:
                 for page in p.paginate(
-                        Path=path,
-                        Recursive=True,
-                        WithDecryption=not self.no_decrypt,
-                        ParameterFilters=self.parameter_filters,
+                    Path=path,
+                    Recursive=True,
+                    WithDecryption=not self.no_decrypt,
+                    ParameterFilters=self.parameter_filters,
                 ):
                     for param in page['Parameters']:
-                        add(obj=output,
-                            path=param['Name'],
-                            value=self._read_param(param['Value'], param['Type'], name=param['Name']))
-            except (ClientError, NoCredentialsError) as e:
-                print("Failed to fetch parameters from SSM!", e, file=sys.stderr)
+                        params[param['Name']] = { 'Value': param['Value'], 'Type': param['Type'] }
+            params = self._enrich_metadata(params)
+            for param_name, param_obj in params.items():
+                args = { 'value' : param_obj['Value'], 'ssm_type': param_obj['Type'], 'name': param_name }
+                if 'KeyId' in param_obj:
+                    args['key_id']=param_obj['KeyId']
+                add(obj=output,
+                    path=param_name,
+                    value=self._read_param(**args))
+        except (ClientError, NoCredentialsError) as e:
+            print("Failed to fetch parameters from SSM!", e, file=sys.stderr)
 
         return output
 
     # noinspection PyMethodMayBeStatic
-    def _read_param(self, value, ssm_type='String', name=None):
+    def _read_param(self, value, ssm_type='String', name=None, key_id=None):
         if ssm_type == 'SecureString':
-            description = self.ssm.describe_parameters(
-                Filters=[{
-                    'Key': 'Name',
-                    'Values': [name]
-                }]
-            )
             value = Secret(value, {
-                self.KMS_KEY: description['Parameters'][0]['KeyId'],
+                self.KMS_KEY: key_id,
             }, encrypted=self.no_decrypt)
         elif ssm_type == 'StringList':
             value = value.split(',')
