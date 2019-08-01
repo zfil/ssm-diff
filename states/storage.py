@@ -265,6 +265,16 @@ class ParameterStore(object):
             })
         self.no_decrypt = no_decrypt
 
+    def _enrich_metadata(self, params):
+        ss_params = [ k for k, v in params.items() if v["Type"] == "SecureString" ]
+        p = self.ssm.get_paginator('describe_parameters')
+        chunk_size = 50
+        for i in range(0, len(ss_params), chunk_size):
+            for page in p.paginate(ParameterFilters=[ { 'Key': 'Name', 'Values': ss_params[i:i+chunk_size] } ]):
+                for param in page['Parameters']:
+                    params[param['Name']]['KeyId'] = param['KeyId']
+        return params
+
     def clone(self):
         p = self.ssm.get_paginator('get_parameters_by_path')
         output = {}
@@ -279,13 +289,7 @@ class ParameterStore(object):
                 ):
                     for param in page['Parameters']:
                         params[param['Name']] = { 'Value': param['Value'], 'Type': param['Type'] }
-            ss_params = [ k for k, v in params.items() if v["Type"] == "SecureString" ]
-            p = self.ssm.get_paginator('describe_parameters')
-            chunk_size = 50
-            for i in range(0, len(ss_params), chunk_size):
-                for page in p.paginate(ParameterFilters=[ { 'Key': 'Name', 'Values': ss_params[i:i+chunk_size] } ]):
-                    for param in page['Parameters']:
-                        params[param['Name']]['KeyId'] = param['KeyId']
+            params = self._enrich_metadata(params)
             for param_name, param_obj in params.items():
                 args = { 'value' : param_obj['Value'], 'ssm_type': param_obj['Type'], 'name': param_name }
                 if 'KeyId' in param_obj:
