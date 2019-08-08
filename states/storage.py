@@ -112,6 +112,10 @@ class JSONBranch(yaml.YAMLObject):
         return not self.__eq__(other)
 
     def __repr__(self):
+        return self.dumps
+
+    @property
+    def dumps(self):
         return json.dumps(self.value, cls=self.encoder)
 
     @classmethod
@@ -122,10 +126,6 @@ class JSONBranch(yaml.YAMLObject):
         node.tag = ''
         value = loader.construct_mapping(node)
         return cls(value)
-
-    @property
-    def dumps(self):
-        return json.dumps(self.value, cls=self.encoder)
 
     @classmethod
     def to_yaml(cls, dumper, data):
@@ -148,22 +148,18 @@ class SecureJSONBranch(JSONBranch, Secret):
     encoder = SecureJSONBranchEncoder
     encoded_tag = Secret.yaml_tag
 
-    def __init__(self, secret, metadata=None, encrypted=False):
-        super(Secret, self).__init__()
-        self.secret = secret
-        self.metadata = {} if metadata is None else metadata
-        self.metadata[self.METADATA_ENCRYPTED] = encrypted
+    def __init__(self, secret):
+        super().__init__(secret)
+        self.metadata = {
+            self.METADATA_ENCRYPTED: False,
+        }
 
     def __repr__(self):
         return "{}(secret={!r}, metadata={!r})".format(self.__class__.__name__, self.secret, self.metadata)
 
     @property
-    def value(self):
-        return self.secret
-
-    @value.setter
-    def value(self, x):
-        self.secret = x
+    def secret(self):
+        return self.dumps
 
 
 yaml.SafeLoader.add_constructor(SecureTag.yaml_tag, SecureTag.from_yaml)
