@@ -31,6 +31,8 @@ yaml.SafeDumper.add_representer(str, str_presenter)
 
 class SecureTag(yaml.YAMLObject):
     yaml_tag = u'!secure'
+    # forward compatibility
+    metadata = {}
 
     def __init__(self, secure):
         self.secure = secure
@@ -49,6 +51,10 @@ class SecureTag(yaml.YAMLObject):
 
     def __ne__(self, other):
         return not self.__eq__(other)
+
+    @property
+    def secret(self):
+        return self.secure
 
     @classmethod
     def from_yaml(cls, loader, node):
@@ -99,8 +105,8 @@ class JSONBranch(yaml.YAMLObject):
     encoder = JSONBranchEncoder
     encoded_tag = u'tag:yaml.org,2002:str'
 
-    def __init__(self, value):
-        self.value = value
+    def __init__(self, raw):
+        self.raw = raw
 
     def __eq__(self, other):
         return repr(self) == (repr(other) if isinstance(other, JSONBranch) else other)
@@ -112,11 +118,14 @@ class JSONBranch(yaml.YAMLObject):
         return not self.__eq__(other)
 
     def __repr__(self):
-        return self.dumps
+        return repr(self.raw)
+
+    def __str__(self):
+        return self.value
 
     @property
-    def dumps(self):
-        return json.dumps(self.value, cls=self.encoder)
+    def value(self):
+        return json.dumps(self.raw, cls=self.encoder)
 
     @classmethod
     def from_yaml(cls, loader, node):
@@ -130,7 +139,7 @@ class JSONBranch(yaml.YAMLObject):
     @classmethod
     def to_yaml(cls, dumper, data):
         """Convert a nested python structure into a !secret containing a JSON string."""
-        return dumper.represent_scalar(cls.encoded_tag, data.dumps)
+        return dumper.represent_scalar(cls.encoded_tag, data.value)
 
 
 class SecureJSONBranchEncoder(json.JSONEncoder):
@@ -143,13 +152,13 @@ class SecureJSONBranchEncoder(json.JSONEncoder):
         return super().default(self, obj)
 
 
-class SecureJSONBranch(JSONBranch, Secret):
+class SecretJSONBranch(JSONBranch, Secret):
     yaml_tag = u'!secretJSON'
     encoder = SecureJSONBranchEncoder
     encoded_tag = Secret.yaml_tag
 
-    def __init__(self, secret):
-        super().__init__(secret)
+    def __init__(self, raw):
+        super().__init__(raw)
         self.metadata = {
             self.METADATA_ENCRYPTED: False,
         }
@@ -159,7 +168,7 @@ class SecureJSONBranch(JSONBranch, Secret):
 
     @property
     def secret(self):
-        return self.dumps
+        return self.value
 
 
 yaml.SafeLoader.add_constructor(SecureTag.yaml_tag, SecureTag.from_yaml)
@@ -170,8 +179,8 @@ yaml.SafeLoader.add_constructor(Secret.yaml_tag, Secret.from_yaml)
 yaml.SafeDumper.add_multi_representer(Secret, Secret.to_yaml)
 yaml.SafeLoader.add_constructor(JSONBranch.yaml_tag, JSONBranch.from_yaml)
 yaml.SafeDumper.add_multi_representer(JSONBranch, JSONBranch.to_yaml)
-yaml.SafeLoader.add_constructor(SecureJSONBranch.yaml_tag, SecureJSONBranch.from_yaml)
-yaml.SafeDumper.add_multi_representer(SecureJSONBranch, SecureJSONBranch.to_yaml)
+yaml.SafeLoader.add_constructor(SecretJSONBranch.yaml_tag, SecretJSONBranch.from_yaml)
+yaml.SafeDumper.add_multi_representer(SecretJSONBranch, SecretJSONBranch.to_yaml)
 
 
 class YAMLFile(object):
@@ -296,9 +305,10 @@ class ParameterStore(object):
 
     def __init__(self, profile, diff_class, paths=('/',), no_secure=False, no_decrypt=False):
         self.logger = logging.getLogger(self.__class__.__name__)
-        if profile:
-            boto3.setup_default_session(profile_name=profile)
-        self.ssm = boto3.client('ssm')
+        # lazy loaded to simplify testing
+        # TODO: convert to injection
+        self.profile = profile
+        self._ssm = None
         self.diff_class = diff_class
         self.paths = paths
         self.parameter_filters = []
@@ -311,6 +321,15 @@ class ParameterStore(object):
                 ]
             })
         self.no_decrypt = no_decrypt
+
+    @property
+    def ssm(self):
+        """Lazy loaded to simplify testing"""
+        if self._ssm is None:
+            if self.profile:
+                boto3.setup_default_session(profile_name=self.profile)
+            self._ssm = boto3.client('ssm')
+        return self._ssm
 
     def _enrich_metadata(self, params):
         ss_params = [ k for k, v in params.items() if v["Type"] == "SecureString" ]
@@ -434,19 +453,13 @@ class ParameterStore(object):
         if isinstance(value, list):
             kwargs['Type'] = 'StringList'
             kwargs['Value'] = ','.join(value)
-        elif isinstance(value, Secret):
+        elif isinstance(value, (Secret, SecureTag)):
             kwargs['Type'] = 'SecureString'
             kwargs['Value'] = value.secret
             kwargs['KeyId'] = value.metadata.get(self.KMS_KEY, None)
-        elif isinstance(value, SecureTag):
-            kwargs['Type'] = 'SecureString'
-            kwargs['Value'] = value.secure
-        elif isinstance(value, JSONBranch):
-            kwargs['Type'] = 'String'
-            kwargs['Value'] = repr(value)
         else:
             kwargs['Type'] = 'String'
-            kwargs['Value'] = value
+            kwargs['Value'] = str(value)
         return kwargs
 
     def push(self, local):
