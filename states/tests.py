@@ -562,7 +562,7 @@ class JSONBranch(TestCase):
             storage.JSONBranch,
         )
         self.assertEqual(
-            repr(obj['root']),
+            obj['root'].value,
             '{"child1": "value1", "child2": "value2"}',
         )
 
@@ -591,4 +591,48 @@ class SecureJSONBranch(TestCase):
         self.assertEqual(
             repr(output),
             repr('root: !Secret \'{"child1": "value1", "child2": "value2"}\'\n'),
+        )
+
+
+class ParameterStore(TestCase):
+
+    def setUp(self) -> None:
+        self.store = storage.ParameterStore('test', engine.DiffResolver)
+
+    def test_prepare_secret(self):
+        obj = storage.Secret('test_value')
+        ssm_dict = self.store.prepare_param('test_name', obj)
+        self.assertEqual(
+            {
+                'KeyId': None,
+                'Name': 'test_name',
+                'Value': 'test_value',
+                'Type': 'SecureString',
+            },
+            ssm_dict,
+        )
+
+    def test_prepare_json_branch(self):
+        obj = storage.JSONBranch({'key1': 'value1', 'key2': 'value2'})
+        ssm_dict = self.store.prepare_param('test_name', obj)
+        self.assertEqual(
+            {
+                'Name': 'test_name',
+                'Value': '{"key1": "value1", "key2": "value2"}',
+                'Type': 'String',
+            },
+            ssm_dict,
+        )
+
+    def test_prepare_secret_json_branch(self):
+        obj = storage.SecretJSONBranch({'key1': 'value1', 'key2': 'value2'})
+        ssm_dict = self.store.prepare_param('test_name', obj)
+        self.assertEqual(
+            {
+                'KeyId': None,
+                'Name': 'test_name',
+                'Value': '{"key1": "value1", "key2": "value2"}',
+                'Type': 'SecureString',
+            },
+            ssm_dict,
         )
