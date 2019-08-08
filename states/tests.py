@@ -1,4 +1,3 @@
-import json
 import random
 import string
 from unittest import TestCase, mock
@@ -565,4 +564,31 @@ class JSONBranch(TestCase):
         self.assertEqual(
             repr(obj['root']),
             '{"child1": "value1", "child2": "value2"}',
+        )
+
+    def test_simple_dump(self):
+        """Allowed to nest a Secure tag in a JSON tag"""
+        obj = yaml.safe_load('root: !JSON\n  child1: value1\n  child2: value2')
+        output = yaml.safe_dump(obj)
+        self.assertEqual(
+            repr(output),
+            repr('root: \'{"child1": "value1", "child2": "value2"}\'\n'),
+        )
+
+    def test_nested_secure(self):
+        """Not permitted to nest a Secure tag in a JSON tag"""
+        obj = yaml.safe_load('root: !JSON\n  child1: !secure value1\n  child2: value2')
+        with self.assertRaises(TypeError):
+            yaml.safe_dump(obj)
+
+
+class SecureJSONBranch(TestCase):
+
+    def test_nested_secure(self):
+        """Allowed to nest a Secure tag in a JSON tag"""
+        obj = yaml.safe_load('root: !secretJSON\n  child1: !secure value1\n  child2: value2')
+        output = yaml.safe_dump(obj)
+        self.assertEqual(
+            repr(output),
+            repr('root: !Secret \'{"child1": "value1", "child2": "value2"}\'\n'),
         )

@@ -86,8 +86,18 @@ class Secret(yaml.YAMLObject):
         return False
 
 
+class JSONBranchEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (SecureTag, SecureString, Secret)):
+            raise TypeError("Cannot nest secure value in JSONBranch; use SecureJSONBranch instead.")
+        # Let the base class default method raise the TypeError
+        return super().default(self, obj)
+
+
 class JSONBranch(yaml.YAMLObject):
     yaml_tag = u'!JSON'
+    encoder = JSONBranchEncoder
+    encoded_tag = u'tag:yaml.org,2002:str'
 
     def __init__(self, value):
         self.value = value
@@ -102,29 +112,70 @@ class JSONBranch(yaml.YAMLObject):
         return not self.__eq__(other)
 
     def __repr__(self):
-        return json.dumps(self.value)
+        return json.dumps(self.value, cls=self.encoder)
 
     @classmethod
     def from_yaml(cls, loader, node):
+        """Accept a nested YAML structure and convert it to a nested python structure."""
         assert isinstance(loader, yaml.SafeLoader)
         # ignore the top-level node
         node.tag = ''
         value = loader.construct_mapping(node)
-        return JSONBranch(value)
+        return cls(value)
+
+    @property
+    def dumps(self):
+        return json.dumps(self.value, cls=self.encoder)
 
     @classmethod
     def to_yaml(cls, dumper, data):
-        return data.value
+        """Convert a nested python structure into a !secret containing a JSON string."""
+        return dumper.represent_scalar(cls.encoded_tag, data.dumps)
+
+
+class SecureJSONBranchEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (SecureTag, SecureString)):
+            return obj.secure
+        if isinstance(obj, Secret):
+            return obj.secret
+        # Let the base class default method raise the TypeError
+        return super().default(self, obj)
+
+
+class SecureJSONBranch(JSONBranch, Secret):
+    yaml_tag = u'!secretJSON'
+    encoder = SecureJSONBranchEncoder
+    encoded_tag = Secret.yaml_tag
+
+    def __init__(self, secret, metadata=None, encrypted=False):
+        super(Secret, self).__init__()
+        self.secret = secret
+        self.metadata = {} if metadata is None else metadata
+        self.metadata[self.METADATA_ENCRYPTED] = encrypted
+
+    def __repr__(self):
+        return "{}(secret={!r}, metadata={!r})".format(self.__class__.__name__, self.secret, self.metadata)
+
+    @property
+    def value(self):
+        return self.secret
+
+    @value.setter
+    def value(self, x):
+        self.secret = x
 
 
 yaml.SafeLoader.add_constructor(SecureTag.yaml_tag, SecureTag.from_yaml)
 # backwards compatibility
-yaml.SafeLoader.add_constructor('!SecureString', SecureTag.from_yaml)
+yaml.SafeLoader.add_constructor(SecureString.yaml_tag, SecureTag.from_yaml)
 # yaml.SafeDumper.add_multi_representer(SecureTag, SecureTag.to_yaml)
 yaml.SafeLoader.add_constructor(Secret.yaml_tag, Secret.from_yaml)
 yaml.SafeDumper.add_multi_representer(Secret, Secret.to_yaml)
 yaml.SafeLoader.add_constructor(JSONBranch.yaml_tag, JSONBranch.from_yaml)
 yaml.SafeDumper.add_multi_representer(JSONBranch, JSONBranch.to_yaml)
+yaml.SafeLoader.add_constructor(SecureJSONBranch.yaml_tag, SecureJSONBranch.from_yaml)
+yaml.SafeDumper.add_multi_representer(SecureJSONBranch, SecureJSONBranch.to_yaml)
 
 
 class YAMLFile(object):
