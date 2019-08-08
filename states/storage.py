@@ -359,7 +359,7 @@ class ParameterStore(object):
             for param_name, param_obj in params.items():
                 args = { 'value' : param_obj['Value'], 'ssm_type': param_obj['Type'], 'name': param_name }
                 if 'KeyId' in param_obj:
-                    args['key_id']=param_obj['KeyId']
+                    args['key_id'] = param_obj['KeyId']
                 add(obj=output,
                     path=param_name,
                     value=self._read_param(**args))
@@ -456,7 +456,8 @@ class ParameterStore(object):
         elif isinstance(value, (Secret, SecureTag)):
             kwargs['Type'] = 'SecureString'
             kwargs['Value'] = value.secret
-            kwargs['KeyId'] = value.metadata.get(self.KMS_KEY, None)
+            if self.KMS_KEY in value.metadata:
+                kwargs['KeyId'] = value.metadata[self.KMS_KEY]
         else:
             kwargs['Type'] = 'String'
             kwargs['Value'] = str(value)

@@ -604,7 +604,6 @@ class ParameterStore(TestCase):
         ssm_dict = self.store.prepare_param('test_name', obj)
         self.assertEqual(
             {
-                'KeyId': None,
                 'Name': 'test_name',
                 'Value': 'test_value',
                 'Type': 'SecureString',
@@ -629,7 +628,6 @@ class ParameterStore(TestCase):
         ssm_dict = self.store.prepare_param('test_name', obj)
         self.assertEqual(
             {
-                'KeyId': None,
                 'Name': 'test_name',
                 'Value': '{"key1": "value1", "key2": "value2"}',
                 'Type': 'SecureString',
