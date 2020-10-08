@@ -1,6 +1,5 @@
 import collections
 import logging
-import re
 from functools import partial
 
 from termcolor import colored
@@ -10,6 +9,7 @@ from .helpers import add
 
 class DiffMount(type):
     """Metaclass for Diff plugin system"""
+
     # noinspection PyUnusedLocal,PyMissingConstructor
     def __init__(cls, *args, **kwargs):
         if not hasattr(cls, 'plugins'):
@@ -20,6 +20,7 @@ class DiffMount(type):
 
 class DiffBase(metaclass=DiffMount):
     """Superclass for diff plugins"""
+
     def __init__(self, remote, local):
         self.logger = logging.getLogger(self.__module__)
         self.remote_flat, self.local_flat = self._flatten(remote), self._flatten(local)
@@ -75,7 +76,8 @@ class DiffBase(metaclass=DiffMount):
 
         for k, v in plan['change'].items():
             # { key: {'old': value, 'new': value} }
-            description += colored("~", 'yellow') + "{}:\n\t< {}\n\t> {}".format(k, repr(v['old']), repr(v['new'])) + '\n'
+            description += colored("~", 'yellow') + "{}:\n\t< {}\n\t> {}".format(k, repr(v['old']),
+                                                                                 repr(v['new'])) + '\n'
 
         if description == "":
             description = "No Changes Detected"
@@ -94,6 +96,7 @@ class DiffBase(metaclass=DiffMount):
 
 class DiffResolver(DiffBase):
     """Determines diffs between two dicts, where the remote copy is considered the baseline"""
+
     def __init__(self, remote, local, force=False):
         super().__init__(remote, local)
         self.intersection = self.remote_set.intersection(self.local_set)

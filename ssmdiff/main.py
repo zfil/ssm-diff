@@ -1,11 +1,9 @@
 #!/usr/bin/env python
-from __future__ import print_function
-
 import argparse
 import logging
-import traceback
 import os
 import sys
+import traceback
 
 from states import *
 
@@ -69,12 +67,13 @@ def plan(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', help='local state yml file', action='store', dest='filename')
-    parser.add_argument('--engine', '-e', help='diff engine to use when interacting with SSM', action='store', dest='engine', default='DiffResolver')
+    parser.add_argument('--engine', '-e', help='diff engine to use when interacting with SSM', action='store',
+                        dest='engine', default='DiffResolver')
     parser.add_argument('--profile', help='AWS profile name', action='store', dest='profile')
     subparsers = parser.add_subparsers(dest='func', help='commands')
     subparsers.required = True
 
-    parser_clone= subparsers.add_parser('clone', help='create a local copy of the remote storage')
+    parser_clone = subparsers.add_parser('clone', help='create a local copy of the remote storage')
     parser_clone.set_defaults(func=clone)
 
     parser_pull = subparsers.add_parser('pull', help='pull changes from remote state')
@@ -117,6 +116,7 @@ def main():
     args.filename = filename
 
     args.func(args)
+
 
 if __name__ == "__main__":
     main()
