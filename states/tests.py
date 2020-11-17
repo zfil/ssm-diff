@@ -2,13 +2,12 @@ import random
 import string
 from unittest import TestCase, mock
 
-import yaml
-
 from . import engine, storage
 
 
 class DiffBaseFlatten(TestCase):
     """Verifies the behavior of the _flatten and _unflatten methods"""
+
     def setUp(self) -> None:
         self.obj = engine.DiffBase({}, {})
 
@@ -124,7 +123,7 @@ class DiffResolverMerge(TestCase):
         }
 
         args = mock.Mock(force=True)
-        diff = engine.DiffResolver.configure(args )(
+        diff = engine.DiffResolver.configure(args)(
             remote,
             local,
         )
@@ -245,6 +244,7 @@ class DiffResolverPlan(TestCase):
 
 class YAMLFileValidatePaths(TestCase):
     """YAMLFile calls `validate_paths` in `__init__` to ensure the root and paths are compatible"""
+
     def test_validate_paths_invalid(self):
         with self.assertRaises(ValueError):
             storage.YAMLFile(filename='unused', root_path='/one/branch', paths=['/another/branch'])
@@ -264,6 +264,7 @@ class YAMLFileValidatePaths(TestCase):
 
 class YAMLFileMetadata(TestCase):
     """Verifies that exceptions are thrown if the metadata in the target file is incompatible with the class configuration"""
+
     def test_get_methods(self):
         """Make sure we use the methods mocked by other tests"""
         filename = ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(32)])
@@ -495,6 +496,7 @@ class YAMLFileMetadata(TestCase):
 
 class YAMLFileRoot(TestCase):
     """Verify that the `root_path` config works as expected"""
+
     def test_unnest_path(self):
         yaml_contents = {
             storage.YAMLFile.METADATA_CONFIG: {
@@ -549,51 +551,6 @@ class YAMLFileRoot(TestCase):
         )
 
 
-class JSONBranch(TestCase):
-
-    def test_eq_mapping(self):
-        obj = yaml.safe_load('root: !JSON\n  child1: value1\n  child2: value2')
-        self.assertIn(
-            'root',
-            obj,
-        )
-        self.assertIsInstance(
-            obj['root'],
-            storage.JSONBranch,
-        )
-        self.assertEqual(
-            obj['root'].value,
-            '{"child1": "value1", "child2": "value2"}',
-        )
-
-    def test_simple_dump(self):
-        """Allowed to nest a Secure tag in a JSON tag"""
-        obj = yaml.safe_load('root: !JSON\n  child1: value1\n  child2: value2')
-        output = yaml.safe_dump(obj)
-        self.assertEqual(
-            repr(output),
-            repr('root: \'{"child1": "value1", "child2": "value2"}\'\n'),
-        )
-
-    def test_nested_secure(self):
-        """Not permitted to nest a Secure tag in a JSON tag"""
-        obj = yaml.safe_load('root: !JSON\n  child1: !secure value1\n  child2: value2')
-        with self.assertRaises(TypeError):
-            yaml.safe_dump(obj)
-
-
-class SecureJSONBranch(TestCase):
-
-    def test_nested_secure(self):
-        """Allowed to nest a Secure tag in a JSON tag"""
-        obj = yaml.safe_load('root: !secretJSON\n  child1: !secure value1\n  child2: value2')
-        output = yaml.safe_dump(obj)
-        self.assertEqual(
-            repr(output),
-            repr('root: !Secret \'{"child1": "value1", "child2": "value2"}\'\n'),
-        )
-
-
 class ParameterStore(TestCase):
 
     def setUp(self) -> None:
@@ -606,30 +563,6 @@ class ParameterStore(TestCase):
             {
                 'Name': 'test_name',
                 'Value': 'test_value',
-                'Type': 'SecureString',
-            },
-            ssm_dict,
-        )
-
-    def test_prepare_json_branch(self):
-        obj = storage.JSONBranch({'key1': 'value1', 'key2': 'value2'})
-        ssm_dict = self.store.prepare_param('test_name', obj)
-        self.assertEqual(
-            {
-                'Name': 'test_name',
-                'Value': '{"key1": "value1", "key2": "value2"}',
-                'Type': 'String',
-            },
-            ssm_dict,
-        )
-
-    def test_prepare_secret_json_branch(self):
-        obj = storage.SecretJSONBranch({'key1': 'value1', 'key2': 'value2'})
-        ssm_dict = self.store.prepare_param('test_name', obj)
-        self.assertEqual(
-            {
-                'Name': 'test_name',
-                'Value': '{"key1": "value1", "key2": "value2"}',
                 'Type': 'SecureString',
             },
             ssm_dict,

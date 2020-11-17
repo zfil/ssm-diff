@@ -1,7 +1,3 @@
-
-from __future__ import print_function
-
-import json
 import logging
 import re
 import sys
@@ -29,8 +25,8 @@ def str_presenter(dumper, data):
 yaml.SafeDumper.add_representer(str, str_presenter)
 
 
-class SecureTag(yaml.YAMLObject):
-    yaml_tag = u'!secure'
+class SecureString(yaml.YAMLObject):
+    yaml_tag = u'!SecureString'
     # forward compatibility
     metadata = {}
 
@@ -44,7 +40,7 @@ class SecureTag(yaml.YAMLObject):
         return termcolor.colored(self.secure, 'magenta')
 
     def __eq__(self, other):
-        return self.secure == other.secure if isinstance(other, SecureTag) else False
+        return self.secure == other.secure if isinstance(other, SecureString) else False
 
     def __hash__(self):
         return hash(self.secure)
@@ -58,17 +54,13 @@ class SecureTag(yaml.YAMLObject):
 
     @classmethod
     def from_yaml(cls, loader, node):
-        return SecureTag(node.value)
+        return SecureString(node.value)
 
     @classmethod
     def to_yaml(cls, dumper, data):
         if len(data.secure.splitlines()) > 1:
             return dumper.represent_scalar(cls.yaml_tag, data.secure, style='|')
         return dumper.represent_scalar(cls.yaml_tag, data.secure)
-
-
-class SecureString(yaml.YAMLObject):
-    yaml_tag = u'!SecureString'
 
 
 class Secret(yaml.YAMLObject):
@@ -85,102 +77,19 @@ class Secret(yaml.YAMLObject):
         return "{}(secret={!r}, metadata={!r})".format(self.__class__.__name__, self.secret, self.metadata)
 
     def __eq__(self, other):
+        if isinstance(other, (Secret, SecureString)):
+            if self.metadata.get(self.METADATA_ENCRYPTED, False) != other.metadata.get(self.METADATA_ENCRYPTED, False):
+                raise TypeError("Cannot compare encrypted and unencrypted keys.")
         if isinstance(other, Secret):
             return self.secret == other.secret and self.metadata == other.metadata
-        if isinstance(other, SecureTag):
+        if isinstance(other, SecureString):
             return self.secret == other.secure
         return False
 
 
-class JSONBranchEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, (SecureTag, SecureString, Secret)):
-            raise TypeError("Cannot nest secure value in JSONBranch; use SecureJSONBranch instead.")
-        # Let the base class default method raise the TypeError
-        return super().default(self, obj)
-
-
-class JSONBranch(yaml.YAMLObject):
-    yaml_tag = u'!JSON'
-    encoder = JSONBranchEncoder
-    encoded_tag = u'tag:yaml.org,2002:str'
-
-    def __init__(self, raw):
-        self.raw = raw
-
-    def __eq__(self, other):
-        return repr(self) == (repr(other) if isinstance(other, JSONBranch) else other)
-
-    def __hash__(self):
-        return hash(self.value)
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __repr__(self):
-        return repr(self.raw)
-
-    def __str__(self):
-        return self.value
-
-    @property
-    def value(self):
-        return json.dumps(self.raw, cls=self.encoder)
-
-    @classmethod
-    def from_yaml(cls, loader, node):
-        """Accept a nested YAML structure and convert it to a nested python structure."""
-        assert isinstance(loader, yaml.SafeLoader)
-        # ignore the top-level node
-        node.tag = ''
-        value = loader.construct_mapping(node)
-        return cls(value)
-
-    @classmethod
-    def to_yaml(cls, dumper, data):
-        """Convert a nested python structure into a !secret containing a JSON string."""
-        return dumper.represent_scalar(cls.encoded_tag, data.value)
-
-
-class SecureJSONBranchEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, (SecureTag, SecureString)):
-            return obj.secure
-        if isinstance(obj, Secret):
-            return obj.secret
-        # Let the base class default method raise the TypeError
-        return super().default(self, obj)
-
-
-class SecretJSONBranch(JSONBranch, Secret):
-    yaml_tag = u'!secretJSON'
-    encoder = SecureJSONBranchEncoder
-    encoded_tag = Secret.yaml_tag
-
-    def __init__(self, raw):
-        super().__init__(raw)
-        self.metadata = {
-            self.METADATA_ENCRYPTED: False,
-        }
-
-    def __repr__(self):
-        return "{}(secret={!r}, metadata={!r})".format(self.__class__.__name__, self.secret, self.metadata)
-
-    @property
-    def secret(self):
-        return self.value
-
-
-yaml.SafeLoader.add_constructor(SecureTag.yaml_tag, SecureTag.from_yaml)
-# backwards compatibility
-yaml.SafeLoader.add_constructor(SecureString.yaml_tag, SecureTag.from_yaml)
-# yaml.SafeDumper.add_multi_representer(SecureTag, SecureTag.to_yaml)
+yaml.SafeLoader.add_constructor(SecureString.yaml_tag, SecureString.from_yaml)
 yaml.SafeLoader.add_constructor(Secret.yaml_tag, Secret.from_yaml)
 yaml.SafeDumper.add_multi_representer(Secret, Secret.to_yaml)
-yaml.SafeLoader.add_constructor(JSONBranch.yaml_tag, JSONBranch.from_yaml)
-yaml.SafeDumper.add_multi_representer(JSONBranch, JSONBranch.to_yaml)
-yaml.SafeLoader.add_constructor(SecretJSONBranch.yaml_tag, SecretJSONBranch.from_yaml)
-yaml.SafeDumper.add_multi_representer(SecretJSONBranch, SecretJSONBranch.to_yaml)
 
 
 class YAMLFile(object):
@@ -332,11 +241,11 @@ class ParameterStore(object):
         return self._ssm
 
     def _enrich_metadata(self, params):
-        ss_params = [ k for k, v in params.items() if v["Type"] == "SecureString" ]
+        ss_params = [k for k, v in params.items() if v["Type"] == "SecureString"]
         p = self.ssm.get_paginator('describe_parameters')
         chunk_size = 50
         for i in range(0, len(ss_params), chunk_size):
-            for page in p.paginate(ParameterFilters=[ { 'Key': 'Name', 'Values': ss_params[i:i+chunk_size] } ]):
+            for page in p.paginate(ParameterFilters=[{'Key': 'Name', 'Values': ss_params[i:i + chunk_size]}]):
                 for param in page['Parameters']:
                     params[param['Name']]['KeyId'] = param['KeyId']
         return params
@@ -348,16 +257,16 @@ class ParameterStore(object):
         try:
             for path in self.paths:
                 for page in p.paginate(
-                    Path=path,
-                    Recursive=True,
-                    WithDecryption=not self.no_decrypt,
-                    ParameterFilters=self.parameter_filters,
+                        Path=path,
+                        Recursive=True,
+                        WithDecryption=not self.no_decrypt,
+                        ParameterFilters=self.parameter_filters,
                 ):
                     for param in page['Parameters']:
-                        params[param['Name']] = { 'Value': param['Value'], 'Type': param['Type'] }
+                        params[param['Name']] = {'Value': param['Value'], 'Type': param['Type']}
             params = self._enrich_metadata(params)
             for param_name, param_obj in params.items():
-                args = { 'value' : param_obj['Value'], 'ssm_type': param_obj['Type'], 'name': param_name }
+                args = {'value': param_obj['Value'], 'ssm_type': param_obj['Type'], 'name': param_name}
                 if 'KeyId' in param_obj:
                     args['key_id'] = param_obj['KeyId']
                 add(obj=output,
@@ -390,7 +299,7 @@ class ParameterStore(object):
         errors = {}
         for k, v in state.items():
             if re.search(cls.invalid_characters, k) is not None:
-                errors[path+sep+k]: 'Invalid Key'
+                errors[path + sep + k]: 'Invalid Key'
                 continue
             if isinstance(v, dict):
                 errors.update(cls.coerce_state(v, path=path + sep + k))
@@ -400,19 +309,18 @@ class ParameterStore(object):
                     if not isinstance(item, str):
                         list_errors.append('list items must be strings: {}'.format(repr(item)))
                     elif re.search(r'[,]', item) is not None:
-                        list_errors.append("StringList is comma separated so items may not contain commas: {}".format(item))
+                        list_errors.append(
+                            "StringList is comma separated so items may not contain commas: {}".format(item))
                 if list_errors:
-                    errors[path+sep+k] = list_errors
-            elif isinstance(v, (str, SecureTag, Secret)):
-                continue
-            elif isinstance(v, JSONBranch):
+                    errors[path + sep + k] = list_errors
+            elif isinstance(v, (str, SecureString, Secret)):
                 continue
             elif isinstance(v, (int, float)):
                 state[k] = str(v)
             elif isinstance(v, type(None)):
                 state[k] = None
             else:
-                errors[path+sep+k] = 'Cannot coerce type {}'.format(type(v))
+                errors[path + sep + k] = 'Cannot coerce type {}'.format(type(v))
         return errors
 
     def dry_run(self, local):
@@ -453,9 +361,9 @@ class ParameterStore(object):
         if isinstance(value, list):
             kwargs['Type'] = 'StringList'
             kwargs['Value'] = ','.join(value)
-        elif isinstance(value, (Secret, SecureTag)):
+        elif isinstance(value, (Secret, SecureString)):
             kwargs['Type'] = 'SecureString'
-            kwargs['Value'] = value.secret
+            kwargs['Value'] = str(value.secret)
             if self.KMS_KEY in value.metadata:
                 kwargs['KeyId'] = value.metadata[self.KMS_KEY]
         else:

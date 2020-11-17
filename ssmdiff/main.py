@@ -29,7 +29,7 @@ def configure_endpoints(args):
 def clone(args):
     """Create a local YAML file from the SSM Parameter Store (per configs in args)"""
     remote, local = configure_endpoints(args)
-    if local.exists():
+    if not args.force and local.exists():
         raise ValueError('File already exists, use `pull` instead')
     local.save(remote.clone())
 
@@ -70,21 +70,21 @@ def main():
     parser.add_argument('--engine', '-e', help='diff engine to use when interacting with SSM', action='store',
                         dest='engine', default='DiffResolver')
     parser.add_argument('--profile', help='AWS profile name', action='store', dest='profile')
-    subparsers = parser.add_subparsers(dest='func', help='commands')
-    subparsers.required = True
+    subparsers = parser.add_subparsers(title='commands', dest='command', help='commands', required=True)
 
     parser_clone = subparsers.add_parser('clone', help='create a local copy of the remote storage')
-    parser_clone.set_defaults(func=clone)
+    parser_clone.set_defaults(command=clone)
+    parser_clone.add_argument('--force', help='overwrite local changes', action='store_true', dest='force')
 
     parser_pull = subparsers.add_parser('pull', help='pull changes from remote state')
-    parser_pull.set_defaults(func=pull)
+    parser_pull.set_defaults(command=pull)
     parser_pull.add_argument('--force', help='overwrite local changes', action='store_true', dest='force')
 
     parser_plan = subparsers.add_parser('plan', help='display changes between local and remote states')
-    parser_plan.set_defaults(func=plan)
+    parser_plan.set_defaults(command=plan)
 
     parser_push = subparsers.add_parser('push', help='push changes to the remote storage')
-    parser_push.set_defaults(func=push)
+    parser_push.set_defaults(command=push)
 
     args = parser.parse_args()
 
@@ -115,7 +115,7 @@ def main():
         filename = filename[:-4]
     args.filename = filename
 
-    args.func(args)
+    args.command(args)
 
 
 if __name__ == "__main__":
